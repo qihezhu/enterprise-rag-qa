@@ -1,0 +1,81 @@
+# ========================
+# 🔴 最高优先级：敏感配置文件（必须排除）
+# ========================
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+id_rsa*
+
+# ========================
+# 🟡 Python 运行产物与缓存
+# ========================
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+dist/
+*.egg-info/
+.eggs/
+venv/
+.venv/
+env/
+
+# ========================
+# 🟢 IDE 与系统临时文件
+# ========================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+
+# ========================
+# 🔵 项目特定：日志与本地数据
+# ========================
+logs/
+*.log
+data/local_*.json
+audit.db
+
+# ========================
+# 🟣 Docker 与 CI/CD
+# ========================
+# Docker 构建产物（镜像不上传源码仓库）
+*.tar
+docker-compose.override.yml
+
+# GitHub Actions 本地测试
+act/
+
+# 容器数据卷（本地开发用）
+mysql_data/
+redis_data/
+chroma_data/
+uploads_data/
+ollama_data/
+
+# ========================
+# ⚪ 本地开发工具与调试产物
+# ========================
+cloudflared.exe
+callback_dump.json
+dispatch_log.json
+cf_out.log
+cloudflared.log
+flask_out.log
+debug_submit.log
+submit_debug.json
+name_cache.json
+resp_apache.txt
+resp_mozilla.txt
+diagnose_rag.py
+test_docs/
+load_test/
+=1.20.0
+企微agent.md

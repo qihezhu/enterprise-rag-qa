@@ -1,0 +1,101 @@
+version: "3.8"
+
+services:
+  # ==================== MySQL 8.0 ====================
+  mysql:
+    image: mysql:8.0
+    container_name: rag-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: 526112
+      MYSQL_DATABASE: db_enterprise_ge
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/01-init.sql
+      - ./sql/seed.sql:/docker-entrypoint-initdb.d/02-seed.sql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p526112"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ==================== Redis ====================
+  redis:
+    image: redis:7-alpine
+    container_name: rag-redis
+    restart: unless-stopped
+    ports:
+      - "6380:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ==================== Flask 后端 ====================
+  flask:
+    build:
+      context: .
+      dockerfile: Dockerfile.server
+    container_name: rag-flask
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: mysql+pymysql://root:526112@mysql:3306/db_enterprise_ge
+      REDIS_URL: redis://redis:6379/0
+      OLLAMA_BASE_URL: http://host.docker.internal:11434
+      SECRET_KEY: enterprise-rag-secret-key-2026
+      QWEN_TOOL_API_KEY: test_api_key
+    ports:
+      - "5000:5000"
+    volumes:
+      - chroma_data:/app/server/chroma_db
+      - uploads_data:/app/server/uploads
+    depends_on:
+      mysql:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
+  # ==================== Vue3 前端 + Nginx ====================
+  nginx:
+    build:
+      context: .
+      dockerfile: Dockerfile.client
+    container_name: rag-nginx
+    restart: unless-stopped
+    ports:
+      - "3000:80"
+    depends_on:
+      - flask
+
+  # ==================== Ollama（可选，默认使用宿主机） ====================
+  ollama:
+    image: ollama/ollama:latest
+    container_name: rag-ollama
+    restart: unless-stopped
+    profiles:
+      - full
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+
+volumes:
+  mysql_data:
+  redis_data:
+  chroma_data:
+  uploads_data:
+  ollama_data:
