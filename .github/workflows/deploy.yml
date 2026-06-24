@@ -1,0 +1,65 @@
+name: Deploy
+
+# 触发条件：ci.yml 的 CI/CD Pipeline 成功完成后自动触发
+on:
+  workflow_run:
+    workflows: ["CI/CD Pipeline"]
+    types: [completed]
+    branches: [main, master]
+
+jobs:
+  deploy:
+    name: Deploy to Local (self-hosted)
+    # 仅当上游 CI 成功时执行，且只在 self-hosted runner 上跑
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: [self-hosted, windows]
+    environment: production
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        run: docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull latest images
+        run: docker compose pull
+        working-directory: ${{ github.workspace }}
+
+      - name: Restart services
+        run: docker compose up -d --remove-orphans
+        working-directory: ${{ github.workspace }}
+
+      - name: Wait for Flask healthy
+        run: |
+          $ErrorActionPreference = "Stop"
+          for ($i = 0; $i -lt 30; $i++) {
+            try {
+              $resp = Invoke-WebRequest -Uri "http://localhost:5000/api/health/live" -UseBasicParsing -TimeoutSec 3
+              if ($resp.StatusCode -eq 200) {
+                Write-Host "Flask is healthy (attempt $($i+1)/30)"
+                break
+              }
+            } catch {
+              Write-Host "Waiting for Flask... ($($i+1)/30)"
+            }
+            Start-Sleep -Seconds 5
+            if ($i -eq 29) { throw "Flask did not become healthy within 150 seconds" }
+          }
+
+      - name: Smoke test - admin login
+        run: |
+          $ErrorActionPreference = "Stop"
+          $body = '{"username":"admin","password":"123456","role":"admin"}'
+          $resp = Invoke-WebRequest -Uri "http://localhost:5000/api/auth/login" -Method POST -Body $body -ContentType "application/json" -UseBasicParsing
+          if ($resp.StatusCode -ne 200) { throw "Login smoke test failed: status $($resp.StatusCode)" }
+          $data = $resp.Content | ConvertFrom-Json
+          if (-not $data.data.token) { throw "Login smoke test failed: no token returned" }
+          Write-Host "Smoke test passed - admin login OK"
+
+      - name: Rollback on failure
+        if: failure()
+        run: |
+          Write-Host "Deployment failed, attempting rollback..."
+          docker compose down --remove-orphans
+          Write-Host "Services stopped. Please manually restart the previous version."

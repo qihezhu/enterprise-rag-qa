@@ -50,7 +50,7 @@ jobs:
       - name: Run tests
         run: |
           cd tests
-          python -m pytest test_all_features.py test_approval_service.py test_token_lock.py test_wecom_crypto.py -v --tb=short
+          python -m pytest test_approval_service.py test_token_lock.py test_wecom_crypto.py test_api_pytest.py -v --tb=short
 
   # ============================================================
   # 2. 前端构建验证
