@@ -11,7 +11,8 @@ COPY client/ ./
 # 恢复 .bin 可执行权限（避免 alpine + npm install 后 vite 失去 +x 导致 Permission denied）
 RUN chmod -R +x node_modules/.bin
 
-RUN npm run build
+# 直接用 node 调 vite 入口，绕开 .bin 软链（某些 alpine + npm install 场景 .bin 缺失导致 exit 127）
+RUN node ./node_modules/vite/bin/vite.js build
 
 # ---- 生产阶段 ----
 FROM nginx:alpine
