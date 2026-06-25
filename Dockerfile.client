@@ -8,6 +8,9 @@ RUN npm install
 
 # 复制源码并构建
 COPY client/ ./
+# 恢复 .bin 可执行权限（避免 alpine + npm install 后 vite 失去 +x 导致 Permission denied）
+RUN chmod -R +x node_modules/.bin
+
 RUN npm run build
 
 # ---- 生产阶段 ----
