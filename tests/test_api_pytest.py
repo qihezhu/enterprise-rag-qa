@@ -186,8 +186,8 @@ class TestDocument:
         assert "total" in data
 
     def test_upload_without_file_rejected(self, client, seed_users):
-        """上传文档未提供文件被拒绝"""
-        token = login(client, "lisi", "123456", "user")
+        """上传文档未提供文件被拒绝（需管理员权限）"""
+        token = login(client, "admin", "123456", "admin")
         r = client.post("/api/documents", headers=auth_header(token))
         assert r.status_code == 400
 

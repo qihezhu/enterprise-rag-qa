@@ -1,17 +1,14 @@
 name: Deploy
 
-# 触发条件：ci.yml 的 CI/CD Pipeline 成功完成后自动触发
+# 可被 ci.yml 通过 workflow_call 调用，也可手动触发（workflow_dispatch）
+# 用于独立部署场景（如紧急回滚、手动重新部署）
 on:
-  workflow_run:
-    workflows: ["CI/CD Pipeline"]
-    types: [completed]
-    branches: [main, master]
+  workflow_call:
+  workflow_dispatch:
 
 jobs:
   deploy:
     name: Deploy to Local (self-hosted)
-    # 仅当上游 CI 成功时执行，且只在 self-hosted runner 上跑
-    if: ${{ github.event.workflow_run.conclusion == 'success' }}
     runs-on: [self-hosted, windows]
     environment: production
 
@@ -22,12 +19,9 @@ jobs:
       - name: Login to GitHub Container Registry
         run: docker login ghcr.io -u ${{ github.actor }} -p ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Pull latest images
-        run: docker compose pull
-        working-directory: ${{ github.workspace }}
-
-      - name: Restart services
-        run: docker compose up -d --remove-orphans
+      - name: Build and start services
+        run: |
+          docker compose up -d --build --remove-orphans
         working-directory: ${{ github.workspace }}
 
       - name: Wait for Flask healthy

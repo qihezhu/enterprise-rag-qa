@@ -87,9 +87,18 @@ def create_app(config_class=Config):
     return app
 
 
-# 创建应用实例（供 flask run 或 python app.py 直接运行使用）
-app = create_app()
+# 应用工厂模式：不在模块顶层创建实例，避免导入时连接数据库
+# 由调用方（run.py / gunicorn / 测试）显式调用 create_app()
+_app = None
+
+
+def get_app():
+    """获取应用实例（延迟创建，避免导入时连接数据库）"""
+    global _app
+    if _app is None:
+        _app = create_app()
+    return _app
 
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    get_app().run(host="0.0.0.0", port=5000, debug=True)

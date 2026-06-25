@@ -40,16 +40,18 @@ def svc():
 class TestSchemaMock:
     """Mock Schema 测试"""
 
-    def test_leave_schema(self, svc):
-        schema = svc.get_schema("请假")
+    def test_leave_schema(self, svc, app):
+        with app.app_context():
+            schema = svc.get_schema("请假")
         assert schema["template_name"] == "请假"
         assert len(schema["controls"]) >= 4
         required_fields = [c["name"] for c in schema["controls"] if c["required"]]
         assert "请假类型" in required_fields
         assert "开始日期" in required_fields
 
-    def test_unknown_template(self, svc):
-        schema = svc.get_schema("未知模板")
+    def test_unknown_template(self, svc, app):
+        with app.app_context():
+            schema = svc.get_schema("未知模板")
         assert len(schema["controls"]) == 0
 
 
