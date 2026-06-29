@@ -5,6 +5,7 @@
 from datetime import datetime, timedelta, timezone
 from flask import current_app
 from ..clients.wecom_client import wecom_client
+from .contact_service import contact_service
 
 # 时区: Asia/Shanghai (UTC+8)
 CST = timezone(timedelta(hours=8))
@@ -57,6 +58,28 @@ class CalendarService:
 
         if start_dt >= end_dt:
             return {"errcode": -1, "errmsg": "开始时间必须早于结束时间"}
+
+        # ---- 名称 → userid 解析（百炼传中文名，企微 API 要 userid） ----
+        resolved_organizer = self._resolve_userid(organizer)
+        if not resolved_organizer:
+            return {"errcode": -1, "errmsg": f"组织者解析失败: {organizer!r} 不在通讯录中，无法预约"}
+        organizer = resolved_organizer  # 后续全部使用 userid
+
+        if isinstance(attendees, list):
+            resolved_attendees = []
+            for a in attendees:
+                r = self._resolve_userid(a)
+                if r:
+                    resolved_attendees.append(r)
+                else:
+                    current_app.logger.warning(f"[日程] 参会人解析失败: {a!r}，已跳过该成员")
+            attendees = resolved_attendees
+        elif attendees:
+            r = self._resolve_userid(attendees)
+            attendees = [r] if r else []
+        else:
+            attendees = []
+        # ---- 解析结束 ----
 
         # 检查参会者忙闲
         all_attendees = [organizer] + (attendees if isinstance(attendees, list) else [attendees])
@@ -143,6 +166,34 @@ class CalendarService:
             return {"errcode": -1, "errmsg": f"企微API异常: {e}", "calendar_list": []}
 
     # ==================== 时间工具 ====================
+
+    def _resolve_userid(self, name):
+        """将 organizer / attendees 中的名称解析为企微 userid
+        - 纯英文/数字（看起来是 userid）→ 直接返回
+        - 含中文 → 调用 contact_service.search_user() 查通讯录
+        - 解析失败 → 返回 None（调用方决定如何降级）
+        不修改 contact_service.py，不影响查通讯录功能。
+        """
+        if not name:
+            return None
+        name = str(name).strip()
+        if not name:
+            return None
+        # 纯英文/数字/下划线 → 当 userid 直接返回（避免无谓的企微 API 调用）
+        if not any('\u4e00' <= c <= '\u9fff' for c in name):
+            return name
+        # 含中文 → 调通讯录搜索（search_user 已带缓存/拼音/部门遍历兜底）
+        try:
+            result = contact_service.search_user(name)
+            users = result.get("results", []) if isinstance(result, dict) else []
+            if users:
+                resolved = users[0].get("userid", "")
+                if resolved:
+                    current_app.logger.info(f"[日程] 名称解析: {name!r} → userid={resolved!r}")
+                    return resolved
+        except Exception as e:
+            current_app.logger.warning(f"[日程] 名称解析异常 name={name!r} err={e}")
+        return None
 
     def _to_timestamp(self, time_input):
         """将多种时间格式转为 Unix 时间戳"""
