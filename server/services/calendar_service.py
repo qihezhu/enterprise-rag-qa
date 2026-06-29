@@ -37,19 +37,11 @@ class CalendarService:
                         else:
                             free.append(slot)
                 return {"busy_slots": busy, "free_slots": free, "total": len(schedules)}
-        except Exception:
-            pass
-
-        # Mock 降级
-        return {
-            "busy_slots": [],
-            "free_slots": [
-                {"userid": uid, "status": 0, "status_label": "空闲",
-                 "start_time": start_ts, "end_time": end_ts}
-                for uid in user_ids
-            ],
-            "total": len(user_ids),
-        }
+            current_app.logger.error(f"[忙闲] check_schedule 失败: {resp}")
+            return {"errcode": resp.get("errcode"), "errmsg": resp.get("errmsg", "查询失败"), "busy_slots": [], "free_slots": []}
+        except Exception as e:
+            current_app.logger.exception(f"[忙闲] check_schedule 异常: {e}")
+            return {"errcode": -1, "errmsg": f"企微API异常: {e}", "busy_slots": [], "free_slots": []}
 
     def book_meeting(self, organizer, attendees, subject, start_time, end_time, room=None):
         """
@@ -99,36 +91,56 @@ class CalendarService:
         try:
             resp = wecom_client.add_schedule(schedule_data)
             if resp.get("errcode") == 0:
+                schedule_id = resp.get("schedule_id", "")
+                # 新增：主动给每个参会人发应用消息邀请（oa/schedule/add 不会自动发邀请）
+                self._send_meeting_invites(all_attendees, organizer, subject, start_dt, end_dt, room, schedule_id)
                 return {
-                    "schedule_id": resp.get("schedule_id", ""),
+                    "schedule_id": schedule_id,
                     "subject": subject,
                     "start_time": start_dt.isoformat(),
                     "end_time": end_dt.isoformat(),
                     "attendees": all_attendees,
                     "organizer": organizer,
                 }
-        except Exception:
-            pass
-        # Mock 降级
-        return {
-            "errcode": 0,
-            "schedule_id": f"DEMO-SCH-{int(start_dt.timestamp())}",
-            "subject": subject,
-            "start_time": start_dt.isoformat(),
-            "end_time": end_dt.isoformat(),
-            "attendees": all_attendees,
-            "organizer": organizer,
-        }
+            current_app.logger.error(f"[日程] add_schedule 失败: {resp}")
+            return {"errcode": resp.get("errcode"), "errmsg": resp.get("errmsg", "创建失败")}
+        except Exception as e:
+            current_app.logger.exception(f"[日程] add_schedule 异常: {e}")
+            return {"errcode": -1, "errmsg": f"企微API异常: {e}"}
+
+    def _send_meeting_invites(self, all_attendees, organizer, subject, start_dt, end_dt, room, schedule_id):
+        """给每个参会人发送会议邀请应用消息（不含 organizer）
+        不阻塞主流程：发送失败仅写日志，不影响日程创建结果。
+        """
+        invite_text = (
+            f"📅 会议邀请\n"
+            f"主题：{subject}\n"
+            f"时间：{start_dt.strftime('%Y-%m-%d %H:%M')} - {end_dt.strftime('%H:%M')}\n"
+            f"地点：{room or '无指定地点'}\n"
+            f"组织者：{organizer}\n"
+            f"日程ID：{schedule_id}\n\n"
+            f"请准时参会。"
+        )
+        for uid in all_attendees:
+            if uid == organizer:  # 跳过组织者
+                continue
+            try:
+                wecom_client.send_message(uid, "text", invite_text)
+                current_app.logger.info(f"[日程邀请] 已发送 uid={uid} subject={subject}")
+            except Exception as e:
+                current_app.logger.warning(f"[日程邀请] 发送失败 uid={uid} err={e}")
 
     def get_calendar(self, user_id=None):
-        """获取日历（API不可用时降级为Mock）"""
+        """获取日历"""
         try:
             resp = wecom_client.get_calendar()
             if resp.get("errcode") == 0:
                 return {"calendar_list": resp.get("calendar_list", [])}
-        except Exception:
-            pass
-        return {"calendar_list": [{"calendar_id": "DEMO-CAL-001", "summary": "演示日历"}]}
+            current_app.logger.error(f"[日历] get_calendar 失败: {resp}")
+            return {"errcode": resp.get("errcode"), "errmsg": resp.get("errmsg", "获取失败"), "calendar_list": []}
+        except Exception as e:
+            current_app.logger.exception(f"[日历] get_calendar 异常: {e}")
+            return {"errcode": -1, "errmsg": f"企微API异常: {e}", "calendar_list": []}
 
     # ==================== 时间工具 ====================
 

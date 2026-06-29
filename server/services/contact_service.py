@@ -129,8 +129,13 @@ class ContactService:
         return any('一' <= c <= '鿿' for c in s)
 
     def _userid_candidates(self, chinese_name):
-        """由中文名生成可能的拼音 userid 候选"""
-        from pypinyin import pinyin, Style
+        """由中文名生成可能的拼音 userid 候选
+        容错：如果 pypinyin 缺失，返回空列表（精确匹配仍可工作）
+        """
+        try:
+            from pypinyin import pinyin, Style
+        except ImportError:
+            return []
         syllables = pinyin(chinese_name, style=Style.NORMAL)
         seen = set()
         candidates = []
