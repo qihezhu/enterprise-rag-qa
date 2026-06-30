@@ -15,34 +15,24 @@ class CalendarService:
     """日程自动驾驶 —— 自然语言日历操作"""
 
     def check_busy(self, user_ids, start_time, end_time):
-        """查询用户忙闲状态（API不可用时降级为Mock）"""
-        start_ts = self._to_timestamp(start_time)
-        end_ts = self._to_timestamp(end_time)
-
+        """查询用户忙闲状态
+        说明：Flask 端使用 WECOM_SECRET（应用 secret）取 access_token，
+        架构上只能看到本应用创建的日程，看不到用户手动创建的日程。
+        真实忙闲查询由百炼"日历"插件以用户身份处理。
+        本接口返回空数据 + 200，由百炼侧自行通过日历插件获取真实忙闲。
+        """
         if not isinstance(user_ids, list):
             user_ids = [user_ids]
-
-        try:
-            resp = wecom_client.check_schedule(user_ids, start_ts, end_ts)
-            if resp.get("errcode") == 0:
-                schedules = resp.get("schedule_list", [])
-                busy = []
-                free = []
-                for s in schedules:
-                    user = s.get("userid", "")
-                    for slot in s.get("schedule", []):
-                        slot["userid"] = user
-                        slot["status_label"] = "忙碌" if slot.get("status") == 1 else "空闲"
-                        if slot.get("status") == 1:
-                            busy.append(slot)
-                        else:
-                            free.append(slot)
-                return {"busy_slots": busy, "free_slots": free, "total": len(schedules)}
-            current_app.logger.error(f"[忙闲] check_schedule 失败: {resp}")
-            return {"errcode": resp.get("errcode"), "errmsg": resp.get("errmsg", "查询失败"), "busy_slots": [], "free_slots": []}
-        except Exception as e:
-            current_app.logger.exception(f"[忙闲] check_schedule 异常: {e}")
-            return {"errcode": -1, "errmsg": f"企微API异常: {e}", "busy_slots": [], "free_slots": []}
+        current_app.logger.info(
+            f"[忙闲] Flask 端不查用户忙闲（架构限制），"
+            f"实际由百炼日历插件处理 users={user_ids} start={start_time} end={end_time}"
+        )
+        return {
+            "busy_slots": [],
+            "free_slots": [],
+            "total": 0,
+            "_degraded_by": "flask_architecture",
+        }
 
     def book_meeting(self, organizer, attendees, subject, start_time, end_time, room=None):
         """
