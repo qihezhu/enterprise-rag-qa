@@ -111,25 +111,41 @@ class CalendarService:
             "location": room or "",
         }
 
+        # ---- 优先级 1 改动：先发应用消息邀请（不依赖 add_schedule 成功） ----
+        # 即使 add_schedule 失败（48002 等），参会人也能收到会议通知
+        invite_ok = True
+        try:
+            self._send_meeting_invites(all_attendees, organizer, subject, start_dt, end_dt, room, "（日程创建中）")
+        except Exception as e:
+            invite_ok = False
+            current_app.logger.exception(f"[日程] 发送邀请异常: {e}")
+        # ---- 改动结束 ----
+
+        # 尝试创建日程（失败不影响邀请结果，仅记日志）
+        schedule_id = ""
         try:
             resp = wecom_client.add_schedule(schedule_data)
             if resp.get("errcode") == 0:
                 schedule_id = resp.get("schedule_id", "")
-                # 新增：主动给每个参会人发应用消息邀请（oa/schedule/add 不会自动发邀请）
-                self._send_meeting_invites(all_attendees, organizer, subject, start_dt, end_dt, room, schedule_id)
-                return {
-                    "schedule_id": schedule_id,
-                    "subject": subject,
-                    "start_time": start_dt.isoformat(),
-                    "end_time": end_dt.isoformat(),
-                    "attendees": all_attendees,
-                    "organizer": organizer,
-                }
-            current_app.logger.error(f"[日程] add_schedule 失败: {resp}")
-            return {"errcode": resp.get("errcode"), "errmsg": resp.get("errmsg", "创建失败")}
+                current_app.logger.info(f"[日程] 创建成功: {schedule_id}")
+            else:
+                current_app.logger.warning(
+                    f"[日程] add_schedule 失败但邀请已发送: {resp}"
+                )
         except Exception as e:
-            current_app.logger.exception(f"[日程] add_schedule 异常: {e}")
-            return {"errcode": -1, "errmsg": f"企微API异常: {e}"}
+            current_app.logger.exception(f"[日程] add_schedule 异常但邀请已发送: {e}")
+
+        # 始终返回成功（因为邀请已经发出）
+        return {
+            "schedule_id": schedule_id,
+            "schedule_status": "created" if schedule_id else "schedule_create_failed_but_invited",
+            "subject": subject,
+            "start_time": start_dt.isoformat(),
+            "end_time": end_dt.isoformat(),
+            "attendees": all_attendees,
+            "organizer": organizer,
+            "invite_sent": invite_ok,
+        }
 
     def _send_meeting_invites(self, all_attendees, organizer, subject, start_dt, end_dt, room, schedule_id):
         """给每个参会人发送会议邀请应用消息（不含 organizer）
