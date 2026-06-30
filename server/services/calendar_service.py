@@ -19,7 +19,8 @@ class CalendarService:
         说明：Flask 端使用 WECOM_SECRET（应用 secret）取 access_token，
         架构上只能看到本应用创建的日程，看不到用户手动创建的日程。
         真实忙闲查询由百炼"日历"插件以用户身份处理。
-        本接口返回空数据 + 200，由百炼侧自行通过日历插件获取真实忙闲。
+        Flask 端返回 errcode=-1 触发 calendar_tool 返 500，
+        让百炼自动 fallback 到日历插件（跟之前能查的状态一致）。
         """
         if not isinstance(user_ids, list):
             user_ids = [user_ids]
@@ -28,10 +29,10 @@ class CalendarService:
             f"实际由百炼日历插件处理 users={user_ids} start={start_time} end={end_time}"
         )
         return {
+            "errcode": -1,
+            "errmsg": "忙闲查询请通过百炼日历插件或企业微信日历直接查看",
             "busy_slots": [],
             "free_slots": [],
-            "total": 0,
-            "_degraded_by": "flask_architecture",
         }
 
     def book_meeting(self, organizer, attendees, subject, start_time, end_time, room=None):
